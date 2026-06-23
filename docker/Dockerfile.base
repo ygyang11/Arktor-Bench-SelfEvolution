@@ -1,0 +1,14 @@
+FROM mambaorg/micromamba:1.5-noble
+COPY environment.yml /tmp/environment.yml
+RUN micromamba install -y -n base -f /tmp/environment.yml && micromamba clean -ay
+ARG MAMBA_DOCKERFILE_ACTIVATE=1
+# root for writable /opt + HOME=/root config delivery; PATH baked so `docker exec` finds the env
+USER root
+ENV HOME=/root
+ENV PATH=/opt/conda/bin:/opt/conda/condabin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+RUN npm install -g @anthropic-ai/claude-code @openai/codex && npm cache clean --force
+ARG ARKTOR_REPO=https://github.com/ygyang11/Arktor
+ARG ARKTOR_REF=main
+RUN git clone --depth 1 --branch ${ARKTOR_REF} ${ARKTOR_REPO} /opt/arktor \
+    && pip install --no-cache-dir "/opt/arktor[cli,app]"
+WORKDIR /workspace

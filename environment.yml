@@ -1,0 +1,36 @@
+name: arktor-bench
+channels: [conda-forge]
+dependencies:
+  - python=3.11
+  - pip
+  - nodejs=22          # codex / claude-code (npm) + agent ts/js
+  - go                 # polyglot: agent may choose go / rust, not just python/js
+  - rust
+  - git
+  - curl
+  - wget
+  - ripgrep
+  - jq
+  - sqlite
+  - unzip
+  - make
+  - compilers          # c/c++/fortran toolchain for native builds
+  - ca-certificates
+  - openssl
+  - pip:               # baseline only — agents self-install long-tail deps at runtime (network on)
+      - requests
+      - httpx
+      - aiohttp
+      - pyyaml
+      - pandas
+      - numpy
+      - scipy
+      - matplotlib
+      - pillow
+      - beautifulsoup4
+      - lxml
+      - openpyxl
+      - python-docx
+      - rich
+      - tabulate
+      - pytest

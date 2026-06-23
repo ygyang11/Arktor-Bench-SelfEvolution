@@ -1,0 +1,67 @@
+from __future__ import annotations
+
+import asyncio
+import os
+import signal
+
+from arktor_bench.sandbox.backend import ExecuteResult
+
+_LOCAL_ENV = "arktor-bench"
+
+
+class LocalBackend:
+    def __init__(self) -> None:
+        self._root: str = ""
+
+    async def start(self, workspace: str) -> None:
+        self._root = workspace
+        proc = await asyncio.create_subprocess_exec(
+            "conda", "env", "list",
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+        out, _ = await proc.communicate()
+        names = {ln.split()[0] for ln in out.decode().splitlines()
+                 if ln.strip() and not ln.startswith("#")}
+        if _LOCAL_ENV not in names:
+            raise SystemExit(
+                f"local backend needs conda env '{_LOCAL_ENV}'; "
+                "create it: conda env create -f environment.yml")
+
+    def _kill(self, proc: asyncio.subprocess.Process) -> None:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
+
+    async def execute(self, command: str, *, timeout: float = 30.0,
+                      env: dict[str, str] | None = None) -> ExecuteResult:
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "conda", "run", "--no-capture-output", "-n", _LOCAL_ENV, "bash", "-c", command,
+                cwd=self._root, env={**os.environ, **(env or {})},
+                stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+                start_new_session=True,
+            )
+        except Exception as e:  # noqa: BLE001
+            return ExecuteResult(exit_code=None, stdout=f"local exec failed: {e}")
+        try:
+            out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        except TimeoutError:
+            self._kill(proc)
+            await proc.wait()
+            return ExecuteResult(exit_code=None, stdout=f"timeout after {timeout}s")
+        except asyncio.CancelledError:
+            self._kill(proc)
+            await proc.wait()
+            raise
+        return ExecuteResult(
+            exit_code=proc.returncode,
+            stdout=(out or b"").decode(errors="replace"),
+            stderr=(err or b"").decode(errors="replace"),
+        )
+
+    async def stop(self) -> None:
+        return

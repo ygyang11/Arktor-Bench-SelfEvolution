@@ -1,0 +1,4 @@
+{"type": "item.completed", "item": {"id": "i0", "type": "reasoning", "text": "Plan the file"}}
+{"type": "item.completed", "item": {"id": "i1", "type": "command_execution", "command": "python todo.py add milk", "exit_code": 0, "status": "completed", "aggregated_output": "added"}}
+{"type": "item.completed", "item": {"id": "i2", "type": "agent_message", "text": "All set."}}
+{"type": "turn.completed", "usage": {"input_tokens": 900, "cached_input_tokens": 100, "output_tokens": 250, "reasoning_output_tokens": 80}}

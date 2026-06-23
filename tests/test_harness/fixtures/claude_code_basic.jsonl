@@ -1,0 +1,5 @@
+{"type": "system", "subtype": "init", "tools": ["Write", "Bash"]}
+{"type": "assistant", "message": {"content": [{"type": "thinking", "thinking": "Let me write the file"}, {"type": "text", "text": "I'll create todo.py"}, {"type": "tool_use", "id": "tu1", "name": "Write", "input": {"file_path": "todo.py", "content": "print(1)"}}]}}
+{"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "tu1", "is_error": false, "content": "File created"}]}}
+{"type": "assistant", "message": {"content": [{"type": "text", "text": "Done"}]}}
+{"type": "result", "subtype": "success", "usage": {"input_tokens": 500, "cache_read_input_tokens": 200, "cache_creation_input_tokens": 100, "output_tokens": 150}}

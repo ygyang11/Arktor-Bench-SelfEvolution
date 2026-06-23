@@ -1,0 +1,50 @@
+# ============================================================
+# # Arktor-Bench-SelfEvolution — Example Configuration File
+# ============================================================
+# Copy this file to `./arktor-bench.yaml` or
+# `~/.arktor-bench/arktor-bench.yaml` and fill in your values.
+# ============================================================
+
+# --- Harnesses (CLIs under test) ---
+# Each harness is configured the way any program is: the files on its disk
+# (`files`: container_path -> host_path) plus its environment (`env`). `model`
+# is the one swept knob, injected at top precedence over the native config.
+# `backend` chooses isolation: docker (default) or local (run on the host — for 
+# subscription auth living in the host keychain, non-portable into a container).
+harness:
+  arktor:
+    model: "gpt-5.5"
+    files:
+      "/root/.arktor/arktor.yaml": "~/.arktor/arktor.yaml"
+  codex:
+    model: "gpt-5.5"
+    files:
+      "/root/.codex/config.toml": "~/.codex/config.toml"
+      "/root/.codex/auth.json": "~/.codex/auth.json"           # or instead → env: { OPENAI_API_KEY: "..." }
+  claude_code:
+    backend: "local"                                           # subscription via host keychain
+    model: "claude-opus-4-8"
+    env:
+      CLAUDE_CODE_EFFORT_LEVEL: "xhigh"
+    # docker alternative (portable token / API key):
+    #   backend: "docker"
+    #   files: { "/root/.claude/settings.json": "~/.claude/settings.json" }
+    #   env: { ANTHROPIC_BASE_URL: "...", CLAUDE_CODE_OAUTH_TOKEN: "..." }   # or ANTHROPIC_API_KEY
+
+# --- Judge / Diagnose (bench's own LLM) ---
+# diagnose is a field-level overlay on judge; `{}` (or omitted) = identical.
+judge:
+  model: "__SET_JUDGE_MODEL__"
+  base_url: "__SET_BASE_URL__"
+  api_key: "__SET_API_KEY__"
+diagnose:
+  model: "__SET_DIAGNOSE_MODEL__"
+
+# --- Execution Environment ---
+docker_image: "arktor-bench:base"   # Shared image built from environment.yml
+mem_limit: "2g"                     # Memory limit per container (null = unlimited)
+cpus: 0.0                           # CPU limit (0 = unlimited)
+wall_s: 1800                        # Wall-clock limit per cell in seconds (uniform across harnesses)
+docker_concurrency: 3               # Docker cells at once; bound by Docker-VM RAM / mem_limit
+local_concurrency: 2                # Local (host-subprocess) cells at once
+llm_concurrency: 8                  # Concurrent judge / diagnose / merge LLM calls
