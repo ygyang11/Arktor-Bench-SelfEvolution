@@ -73,8 +73,9 @@ class _MergeOut(BaseModel):
 
 
 _MERGE_SYSTEM = """\
-You turn diagnostic findings — root causes from a agent failed, all sharing the one attribution shown \
-at the top — into a small backlog of distinct, actionable issues. Each finding is one root cause.
+You turn diagnostic findings — root causes from a agent failed, all sharing the one attribution \
+shown at the top — into a small backlog of distinct, actionable issues. Each finding is one root \
+cause.
 
 Cluster by fix: merge two findings only when one fix would resolve both, and keep apart \
 whatever needs a different fix — so paraphrases of one cause fold into a single issue \

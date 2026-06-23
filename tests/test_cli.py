@@ -38,7 +38,8 @@ def test_run_rejects_unknown_task() -> None:
 
 
 def test_diagnose_rejects_non_run_dir(tmp_path: Path) -> None:
-    result = runner.invoke(app, ["diagnose", str(tmp_path)])    # empty dir, no tasks.json
+    result = runner.invoke(app, ["diagnose", str(tmp_path)],     # empty dir, no tasks.json
+                           env={"COLUMNS": "200"})                # avoid Rich panel wrapping the message
     assert result.exit_code != 0
     assert not isinstance(result.exception, FileNotFoundError)
     assert "not a run directory" in result.output

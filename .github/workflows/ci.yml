@@ -48,4 +48,4 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install -e ".[dev]"
-      - run: arktor-bench validate general
+      - run: arktor-bench validate test
