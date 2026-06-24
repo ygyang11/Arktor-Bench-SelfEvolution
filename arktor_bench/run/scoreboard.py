@@ -45,6 +45,8 @@ class Efficiency(BaseModel):
     tokens_total: float
     steps: float
     cap_hit_rate: float
+    metered: int                                          # cells the token/step means are built on
+    total: int                                            # cells attempted (metered + bad-debt)
 
 
 class HarnessBoard(BaseModel):
@@ -63,6 +65,10 @@ class Scoreboard(BaseModel):
     tasks: list[str]
     trials: int
     harnesses: dict[str, HarnessBoard]
+
+
+def _metered(m: CellMetrics) -> bool:                     # trustworthy cost needs a clean exit
+    return not m.error and m.steps > 0
 
 
 def build_summary(task_id: str, scores: list[OutcomeScore],
@@ -87,12 +93,13 @@ def build_summary(task_id: str, scores: list[OutcomeScore],
                          mean=sum(acc[cid]) / len(acc[cid]), scores=acc[cid])
         for cid in order
     ]
-    n = len(metrics) or 1
+    metered = [m for m in metrics if _metered(m)]         # exclude bad-debt cells from cost means
+    n = len(metered) or 1
     return TaskSummary(
         task_id=task_id, mean=sum(trials) / len(trials) if trials else 0.0,
         trials=trials, std=pstdev(trials) if len(trials) > 1 else 0.0,
-        tokens_total=sum(m.tokens.input + m.tokens.output for m in metrics) / n,
-        steps=sum(m.steps for m in metrics) / n, criteria=criteria,
+        tokens_total=sum(m.tokens.input + m.tokens.output for m in metered) / n,
+        steps=sum(m.steps for m in metered) / n, criteria=criteria,
     )
 
 
@@ -110,13 +117,16 @@ def _slice(per_task: dict[str, float], labels: dict[str, TaskLabels],
 
 
 def _efficiency(metrics: list[CellMetrics]) -> Efficiency:
-    n = len(metrics) or 1
+    metered = [m for m in metrics if _metered(m)]         # cost means exclude bad-debt cells;
+    n = len(metered) or 1                                 # cap_hit_rate stays over all attempts
+    total = len(metrics) or 1
     return Efficiency(
-        tokens_in=sum(m.tokens.input for m in metrics) / n,
-        tokens_out=sum(m.tokens.output for m in metrics) / n,
-        tokens_total=sum(m.tokens.input + m.tokens.output for m in metrics) / n,
-        steps=sum(m.steps for m in metrics) / n,
-        cap_hit_rate=sum(m.cap_hit for m in metrics) / n,
+        tokens_in=sum(m.tokens.input for m in metered) / n,
+        tokens_out=sum(m.tokens.output for m in metered) / n,
+        tokens_total=sum(m.tokens.input + m.tokens.output for m in metered) / n,
+        steps=sum(m.steps for m in metered) / n,
+        cap_hit_rate=sum(m.cap_hit for m in metrics) / total,
+        metered=len(metered), total=len(metrics),
     )
 
 
@@ -171,6 +181,8 @@ def _render(sb: Scoreboard) -> str:
     for field in ("tokens_in", "tokens_out", "tokens_total", "steps", "cap_hit_rate"):
         cells = " | ".join(f"{getattr(sb.harnesses[h].efficiency, field):.2f}" for h in hs)
         out.append(f"| {field} | {cells} |")
+    metered = " | ".join(f"{(e := sb.harnesses[h].efficiency).metered}/{e.total}" for h in hs)
+    out.append(f"| metered (cost means) | {metered} |")    # how many cells the cost means rest on
     return "\n".join(out)
 
 

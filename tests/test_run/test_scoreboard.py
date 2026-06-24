@@ -73,6 +73,28 @@ def test_efficiency_and_cap_rate() -> None:
     assert eff.steps == pytest.approx(5.0)
     assert eff.cap_hit_rate == pytest.approx(0.5)
     assert eff.tokens_total == pytest.approx(150.0)
+    assert eff.metered == 2 and eff.total == 2
+
+
+def _bad_debt(steps: int = 4) -> CellMetrics:            # ran (or not) but exited non-clean
+    return CellMetrics(tokens=TokenUsage(), steps=steps, wall_ms=1, cap_hit=True,
+                       error="exit code -15")
+
+
+def test_efficiency_excludes_bad_debt() -> None:
+    eff = _efficiency([_metrics(steps=10, tin=600, tout=30), _bad_debt()])
+    assert eff.steps == pytest.approx(10.0)              # cost means built on the clean cell only
+    assert eff.tokens_total == pytest.approx(630.0)
+    assert eff.metered == 1 and eff.total == 2
+    assert eff.cap_hit_rate == pytest.approx(0.5)        # but the failure still counts in the rate
+
+
+def test_summary_cost_means_exclude_bad_debt() -> None:
+    s = build_summary("T001_min", [_score(1.0, 1.0), _score(0.0, 0.0)],
+                      [_metrics(steps=10, tin=600, tout=30), _bad_debt()])
+    assert s.steps == pytest.approx(10.0)               # cost mean over the clean cell
+    assert s.tokens_total == pytest.approx(630.0)
+    assert s.mean == pytest.approx(0.5)                 # score mean still spans all trials
 
 
 def _board(per_task: dict[str, float], trials: dict[str, int]) -> HarnessBoard:

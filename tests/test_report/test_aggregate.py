@@ -76,8 +76,16 @@ def test_merge_out_rejects_bad_assignments() -> None:
 
 
 def test_run_failures_section() -> None:
-    md = _render_backlog("arktor", [], [RunFailure(task="T001_min", trial="0", error="boom 503")])
-    assert "## Run failures" in md and "boom 503" in md
+    md = _render_backlog("arktor", [],
+                         [RunFailure(task="T001_min", trial="0", error="boom 503", ran=False)])
+    assert "## Run failures" in md and "boom 503" in md and "produced no trajectory" in md
+
+
+def test_degraded_cells_fold_into_run_failures() -> None:
+    md = _render_backlog("arktor", [],
+                         [RunFailure(task="T001_min", trial="1", error="exit code -15", ran=True)])
+    assert "## Run failures" in md and "exit code -15" in md   # one section, sub-point distinguishes
+    assert "exited non-clean" in md and "## Degraded cells" not in md
 
 
 def test_render_backlog_shows_empty_section_explicitly() -> None:
@@ -101,6 +109,20 @@ async def test_build_report_writes_backlog_per_harness(run_tree: Any, fake_llm: 
     data = json.loads((run_tree.out / "arktor" / "backlog.json").read_text())
     assert len(data["issues"]) == 1
     assert (run_tree.out / "arktor" / "backlog.md").is_file()
+
+
+async def test_build_report_flags_degraded_cell(run_tree: Any, fake_llm: FakeFactory,
+                                                monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(agg, "get_config", _cfg)
+    run_tree.manifest(harnesses=["arktor"], trials=1, tasks=["T001_min"])
+    metrics = CellMetrics(tokens=TokenUsage(), steps=4, wall_ms=1, cap_hit=True,  # ran but killed
+                          error="exit code -15")
+    run_tree.cell("arktor", "T001_min", 0, metrics=metrics)   # scored, no findings -> clean backlog
+    await build_report(run_tree.out, fake_llm([]))
+    md = (run_tree.out / "arktor" / "backlog.md").read_text()
+    assert "## Run failures" in md and "exit code -15" in md and "exited non-clean" in md
+    data = json.loads((run_tree.out / "arktor" / "backlog.json").read_text())
+    assert len(data["run_failures"]) == 1 and data["run_failures"][0]["ran"] is True
 
 
 async def test_skips_corrupt_findings_json(run_tree: Any, fake_llm: FakeFactory,

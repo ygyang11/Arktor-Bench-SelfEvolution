@@ -32,6 +32,7 @@ class RunFailure(BaseModel):
     task: str
     trial: str
     error: str
+    ran: bool
 
 
 def _impact(members: list[Finding], task_weight: dict[str, float],
@@ -186,43 +187,56 @@ def _issue_section(title: str, action: str, issues: list[Issue]) -> list[str]:
     return out
 
 
-def _render_backlog(harness: str, issues: list[Issue], run_fail: list[RunFailure]) -> str:
+def _run_failures_section(faults: list[RunFailure]) -> list[str]:
+    out = ["## Run failures", "",                       # one section; ran tells the two kinds apart
+           "Cells that did not complete cleanly — investigate before trusting their row.", ""]
+    out += _by_error([f for f in faults if not f.ran],
+                     "produced no trajectory and scored 0 — not diagnosed a real weakness "
+                     "(infra or harness-launch)")
+    out += _by_error([f for f in faults if f.ran],
+                     "ran and was scored, but exited non-clean — cost is untrustworthy "
+                     "and excluded from the means")
+    out.append("")
+    return out
+
+
+def _by_error(faults: list[RunFailure], note: str) -> list[str]:
+    by_err: dict[str, list[str]] = {}
+    for rf in faults:
+        by_err.setdefault(rf.error, []).append(f"{rf.task}/{rf.trial}")
+    return [f"- [{', '.join(sorted(where))}] {err} — {note}" for err, where in by_err.items()]
+
+
+def _render_backlog(harness: str, issues: list[Issue], faults: list[RunFailure]) -> str:
     harness_issues = [i for i in issues if i.attribution.layer is not None]
     model_issues = [i for i in issues if i.attribution.model is not None]
     out = [f"# Backlog — {harness}", ""]
-    if not (issues or run_fail):
+    if not (issues or faults):
         out += ["No issues found in this run — no diagnosed weaknesses and no run failures.", ""]
         return "\n".join(out)
     out += _issue_section("Harness issues", "Fix", harness_issues)   # both sections always render,
     out += _issue_section(                                            # empty one says "None found"
         "Model capabilities (not a harness fix — model-trainer guidance)",
         "Guidance", model_issues)
-    if run_fail:                                       # cells that produced no trajectory
-        by_err: dict[str, list[str]] = {}
-        for rf in run_fail:
-            by_err.setdefault(rf.error, []).append(f"{rf.task}/{rf.trial}")
-        out += ["## Run failures", "",
-                "These cells produced no trajectory and scored 0 — not diagnosed a real weakness "
-                "(infra or harness-launch failure). Investigate before trusting the board.", ""]
-        out += [f"- [{', '.join(sorted(cells))}] {err}" for err, cells in by_err.items()]
-        out.append("")
+    if faults:
+        out += _run_failures_section(faults)
     return "\n".join(out)
 
 
 async def build_report(run_dir: Path, llm: StructuredLLM) -> None:
     manifest = read_manifest(run_dir)
     by_harness: dict[str, list[Finding]] = defaultdict(list)
-    run_fail: dict[str, list[RunFailure]] = defaultdict(list)
+    faults: dict[str, list[RunFailure]] = defaultdict(list)
     present: set[str] = set()
     harnesses: set[str] = set()
     for cell in iter_cells(run_dir):
         present.add(cell.task)
         harnesses.add(cell.harness)
-        try:  # a cell with no trajectory never ran — surface it
+        try:  # a cell that didn't complete cleanly (the complement of a metered cell) — surface it
             m = CellMetrics.model_validate_json(cell.metrics.read_text())
-            if m.steps == 0:
-                run_fail[cell.harness].append(
-                    RunFailure(task=cell.task, trial=cell.trial, error=m.error or "unknown"))
+            if m.error or m.steps == 0:                  # ran tells no-trajectory from degraded
+                faults[cell.harness].append(RunFailure(
+                    task=cell.task, trial=cell.trial, error=m.error or "unknown", ran=m.steps > 0))
         except (OSError, ValueError):
             pass
         if not cell.findings.is_file():
@@ -237,15 +251,15 @@ async def build_report(run_dir: Path, llm: StructuredLLM) -> None:
     task_weight = {t.id: t.total_weight for t in tasks}
     log(f"report: aggregating findings for {sorted(by_harness) or 'no deficiencies'}")
     backlog = await aggregate(by_harness, task_weight, len(tasks), manifest.trials, llm)
-    for harness in sorted(harnesses | set(backlog) | set(run_fail)):   # every harness in the run
+    for harness in sorted(harnesses | set(backlog) | set(faults)):     # every harness in the run
         issues = backlog.get(harness, [])
-        rf = run_fail.get(harness, [])
+        fs = faults.get(harness, [])
         d = run_dir / harness
         d.mkdir(parents=True, exist_ok=True)
         (d / "backlog.json").write_text(json.dumps({
             "issues": [i.model_dump(mode="json") for i in issues],
-            "run_failures": [f.model_dump() for f in rf],
+            "run_failures": [f.model_dump() for f in fs],
         }, ensure_ascii=False, indent=2))
-        (d / "backlog.md").write_text(_render_backlog(harness, issues, rf))
-        log(f"report: {harness} -> {len(issues)} issues, {len(rf)} run-failures "
+        (d / "backlog.md").write_text(_render_backlog(harness, issues, fs))
+        log(f"report: {harness} -> {len(issues)} issues, {len(fs)} run-failures "
             f"({d / 'backlog.md'})")
