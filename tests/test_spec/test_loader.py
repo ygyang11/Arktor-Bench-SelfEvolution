@@ -74,3 +74,13 @@ def test_load_pack_validates_and_rejects_unknown(tmp_path: Path) -> None:
     _write(tmp_path, "one", _task_md(id="one"))
     with pytest.raises(ValueError):
         load_pack("general", ["nope"], base=tmp_path)
+
+
+def test_loads_dir_form_grader(tmp_path: Path) -> None:
+    # top-level grader.py absent -> loader falls back to grader/grader.py (helpers alongside)
+    d = tmp_path / "T"
+    (d / "grader").mkdir(parents=True)
+    (d / "task.md").write_text(_task_md(id="T"))
+    (d / "grader" / "grader.py").write_text(_GRADER_OK)
+    _, checks = load(d)
+    assert set(checks) == {"c_ok"}

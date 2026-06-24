@@ -86,16 +86,18 @@ def load_task(task_dir: Path) -> TaskSpec:
 
 def load_checks(task_dir: Path) -> dict[str, CheckFn]:
     path = task_dir / "grader.py"
+    if not path.is_file():                              # fall back to grader/grader.py — a grader
+        path = task_dir / "grader" / "grader.py"       
     if not path.is_file():
         return {}
     spec = importlib.util.spec_from_file_location(f"grader_{task_dir.name}", path)
     if spec is None or spec.loader is None:
-        raise ValueError(f"{task_dir}: cannot load grader.py")
+        raise ValueError(f"{task_dir}: cannot load grader")
     module = importlib.util.module_from_spec(spec)
     try:
         spec.loader.exec_module(module)
     except Exception as e:  # noqa: BLE001
-        raise ValueError(f"{task_dir}: grader.py failed to import: {e}") from e
+        raise ValueError(f"{task_dir}: grader failed to import: {e}") from e
     return collect_checks(module)
 
 
