@@ -29,21 +29,26 @@ _SYSTEM = """\
 You are an agent diagnostician. The candidate is a model run inside a harness — the \
 scaffold (instructions, tools, loop, context) that turns a model into an agent. You \
 are given the task, the criteria the run failed, and a compact trajectory of what the \
-agent did. For each failed criterion, trace the failure to its underlying cause and \
-attribute that cause to one category — a harness lever or a model capability — by the \
-taxonomy and rule given below.
+agent did. Trace each way the run fell short — **the failed criteria** in its result, \
+and any wasted or misdirected effort the **trajectory** shows — to its underlying \
+cause, and attribute that cause to one category — a harness lever or a model \
+capability — by the taxonomy and rule given below. 
 
 State the root_cause as a durable property of the failing lever or capability — one \
-that holds beyond this run, not a recap of it.
+that holds beyond this run, not a recap of it. And Read the trajectory in its own right, not \
+only as evidence for the criteria — its waste is the easiest to miss.
 - Name what is at fault by what it durably is — a harness tool (use real name) lacks , \
 the model by the capability that fell short — never by the agent's generated functions or \
 files, even where the failed criteria quote them, which carry no meaning beyond this run.
-- Keep out the rest specific to this run — the task's wording, the steps taken, and \
-the code the agent wrote — though the trajectory shows them all.
-- Well-formed, one per side: "the shell tool's error result returns only the exit \
-code, not stderr, so the agent cannot tell why a command failed and retries it \
-unchanged"; "the model mis-derives the recursion's base case and returns off-by-one \
-results though the task was unambiguous and the tools sufficed.\""""
+- Keep out the rest specific to this run — the task's wording, a recap of the steps, and \
+the code the agent wrote.
+- Well-formed and correctly filed — a harness lever, a model capability, and a process \
+shortfall no criterion scored (criterion_ids ["trajectory"]): "the shell tool's error \
+result returns only the exit code, not stderr, so the agent cannot tell why a command \
+failed and retries it unchanged"; "the model mis-derives the recursion's base case and \
+returns off-by-one results though the task was unambiguous and the tools sufficed"; "the \
+agent reaches for a patch tool the harness does not provide though a suitable \
+file-writing tool is available."""
 
 _USER = """\
 {lever_spec}
@@ -57,8 +62,9 @@ _USER = """\
 # Compact trajectory
 {compact}
 
-Now produce findings for the failed criteria above, following the rules above: each \
-finding carries its criterion_ids, its root_cause, and its attribution."""
+Now produce findings for the shortfalls above, following the rules and each \
+finding carries its criterion_ids ("trajectory" for a trajectory finding), \
+its root_cause, and its attribution."""
 
 
 class _FindingItem(BaseModel):
@@ -91,7 +97,8 @@ async def diagnose_run(
     out = await llm.complete(prompt, _DiagnoseOut, system=_SYSTEM)
     raw: list[tuple[_FindingItem, list[str]]] = []
     for f in out.findings:
-        ids = list(dict.fromkeys(i for i in f.criterion_ids if i in by))   # known, de-duped
+        ids = list(dict.fromkeys(                              # de-duped; a real criterion, or
+            i for i in f.criterion_ids if i in by or i == "trajectory"))   # the process label
         if ids:
             raw.append((f, ids))
     cover = Counter(i for _, ids in raw for i in ids)           # findings sharing each criterion
@@ -99,7 +106,8 @@ async def diagnose_run(
         Finding(
             task_id=score.task_id, trial=score.trial, criterion_ids=ids,
             attribution=f.attribution, root_cause=f.root_cause,
-            recoverable_points=sum(by[i].weight * (1 - by[i].score) / cover[i] for i in ids),
+            recoverable_points=sum(by[i].weight * (1 - by[i].score) / cover[i]
+                                   for i in ids if i in by),   # "trajectory" scores 0
         )
         for f, ids in raw
     ]

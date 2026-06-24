@@ -28,11 +28,13 @@ and a concrete change to that lever would have prevented the failure. Name the l
 instructions — What the system prompt tells the model about how to work: its role, \
 its principles, and how to use its tools (which tool to reach for, the intended way \
 of working). General guidance, not the spec of any one tool (that is tools.schema) \
-nor the control loop (that is loop). For example: reaching for a raw shell command \
-where a dedicated tool exists is instructions; calling the right tool wrongly \
-because its interface was unclear is tools.schema; finishing without checking the work against \
-the task, which a general verify-before-finishing instruction would prevent, is \
-instructions, not model.planning.
+nor the control loop (that is loop). For example:
+reaching for a raw shell command where a dedicated tool exists is instructions; \
+calling the right tool wrongly because its interface was unclear is tools.schema; \
+finishing without checking the work against the task, which a general \
+verify-before-finishing instruction would prevent, is instructions, not model.planning; \
+e.g. code that buries parsing in its handlers is model.code, not instructions — an \
+instruction can direct what the model does, not how well it does it
 
 tools — A specific tool as the model meets it: finding it, calling it, and reading what \
 comes back. Four sub-levers, each the cause when:
@@ -60,12 +62,14 @@ A failure here is the model's own: the scaffold was adequate and it still fell \
 short. Name the capability:
   reasoning — flawed logic, analysis, or inference, with no misleading cue from the \
 scaffold.
-  code — flawed implementation, structure, or use of the language and its libraries — \
-the coding ability itself, on a clear task with working tools.
+  code — flawed use, structure, or implementation of the language and its libraries — \
+the coding craft itself,  including the quality of its code output on a clear task \
+with working tools.
   math — flawed calculation, derivation, or quantitative argument — the mathematical \
 work itself, not the general reasoning around it.
   domain_knowledge — a fact the task needed that the model lacked and the context was \
-not meant to supply.
+not meant to supply. A vague message about a condition the model itself just get is \
+not a missing fact.
   planning — failed to break the task into the right steps or sequence them sensibly — \
 what to do and in what order (not code organization), though the loop gave the run room to finish.
   tool_use — the model mishandled adequate tools: it never reached for an obvious tool \
