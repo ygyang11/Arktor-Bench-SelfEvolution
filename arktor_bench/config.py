@@ -28,6 +28,7 @@ class HarnessInvocation(BaseModel):
     backend: Literal["docker", "local"] = "docker"
     model: str = ""
     image: str | None = None
+    mounts: dict[str, str] = Field(default_factory=dict)   # container_path -> host_path, read-only
     files: dict[str, str] = Field(default_factory=dict)
     env: dict[str, str] = Field(default_factory=dict)
     model_config = {"extra": "forbid"}

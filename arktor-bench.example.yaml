@@ -7,8 +7,11 @@
 
 # --- Harnesses (CLIs under test) ---
 # Each harness is configured the way any program is: the files on its disk
-# (`files`: container_path -> host_path) plus its environment (`env`). `model`
-# is the one swept knob, injected at top precedence over the native config.
+# (`files`: container_path -> host_path) plus its environment (`env`). `mounts`
+# (container_path -> host_path) read-only volume-mounts a local harness checkout
+# into the sandbox; with `env` (e.g. PYTHONPATH) it runs your working-tree harness
+# without rebuilding the image — the iteration loop for harness tuning. `model` is
+# the one swept knob, injected at top precedence over the native config.
 # `backend` chooses isolation: docker (default) or local (run on the host — for 
 # subscription auth living in the host keychain, non-portable into a container).
 harness:
@@ -16,6 +19,9 @@ harness:
     model: "gpt-5.5"
     files:
       "/root/.arktor/arktor.yaml": "~/.arktor/arktor.yaml"
+    # run your local harness checkout instead of the image's pinned build (no rebuild):
+    #   mounts: { "/opt/arktor-src": "/abs/path/to/Arktor/src" }
+    #   env:    { PYTHONPATH: "/opt/arktor-src" }
   codex:
     model: "gpt-5.5"
     files:

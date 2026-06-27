@@ -113,11 +113,11 @@ async def _place_files(ws: Workspace, files: dict[str, str]) -> None:
 
 
 @asynccontextmanager
-async def _make(setup: str | None, root: Path, backend_mode: str,
-                image: str | None) -> AsyncIterator[Workspace]:
+async def _make(setup: str | None, root: Path, backend_mode: str, image: str | None,
+                mounts: dict[str, str] | None = None) -> AsyncIterator[Workspace]:
     cfg = get_config()
     backend: Backend = (
-        DockerBackend(image or cfg.docker_image, memory=cfg.mem_limit, cpus=cfg.cpus)
+        DockerBackend(image or cfg.docker_image, memory=cfg.mem_limit, cpus=cfg.cpus, mounts=mounts)
         if backend_mode == "docker" else LocalBackend()
     )
     await backend.start(str(root))
@@ -136,7 +136,7 @@ async def task_workspace(task: TaskSpec, inv: HarnessInvocation) -> AsyncIterato
     root = Path(tempfile.mkdtemp(prefix="abx-"))
     try:
         _materialize(task, root)
-        async with _make(task.setup, root, inv.backend, inv.image) as ws:
+        async with _make(task.setup, root, inv.backend, inv.image, inv.mounts) as ws:
             if inv.backend == "docker":
                 await _place_files(ws, inv.files)
             yield ws

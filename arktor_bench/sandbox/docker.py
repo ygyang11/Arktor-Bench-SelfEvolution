@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import atexit
+from pathlib import Path
 from typing import Any
 
 import docker as _docker
@@ -12,11 +13,13 @@ _WORKDIR = "/workspace"
 
 class DockerBackend:
     def __init__(self, image: str, *, network: str = "bridge",
-                 memory: str | None = None, cpus: float = 0.0) -> None:
+                 memory: str | None = None, cpus: float = 0.0,
+                 mounts: dict[str, str] | None = None) -> None:
         self._image = image
         self._network = network
         self._memory = memory
         self._cpus = cpus
+        self._mounts = mounts or {}
         self._client: Any = None
         self._container: Any = None
 
@@ -28,10 +31,15 @@ class DockerBackend:
                 kwargs["mem_limit"] = self._memory
             if self._cpus > 0:
                 kwargs["nano_cpus"] = int(self._cpus * 1e9)
+            volumes: dict[str, dict[str, str]] = {workspace: {"bind": _WORKDIR, "mode": "rw"}}
+            for container_path, host_path in self._mounts.items():
+                src = Path(host_path).expanduser().resolve()
+                if not src.exists():                       # fail loud, not a silent empty mount
+                    raise FileNotFoundError(f"harness mount source missing: {host_path}")
+                volumes[str(src)] = {"bind": container_path, "mode": "ro"}
             container = client.containers.run(
                 self._image, "sleep infinity", detach=True, working_dir=_WORKDIR,
-                network_mode=self._network,
-                volumes={workspace: {"bind": _WORKDIR, "mode": "rw"}}, **kwargs,
+                network_mode=self._network, volumes=volumes, **kwargs,
             )
             return client, container
 
