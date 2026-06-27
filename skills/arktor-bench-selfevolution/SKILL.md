@@ -100,6 +100,10 @@ A evaluation writes everything it produces here.
 
 Read **`<harness>/backlog.md`** first. Each issue is a recurring weakness:
 
+Treat the backlog as a lead, not a verdict. Its attribution can miss — most often the exact sub-lever, 
+sometimes the harness-vs-model side itself — and a Fix may be too task-specific to apply as written. 
+Read the summary, evidence and the harness code, reason it out, and settle the real lever and fix before changing anything.
+
 - `attribution` — a harness lever (`instructions`, `tools.{surface,schema,success,error}`,
   `loop`, `context`) or a model capability (`model.{reasoning,code,math,domain_knowledge,planning,tool_use}`),
   split into two sections in the backlog. The harness levers are your work; `model.*` you cannot
