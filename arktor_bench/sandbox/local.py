@@ -37,10 +37,15 @@ class LocalBackend:
 
     async def execute(self, command: str, *, timeout: float = 30.0,
                       env: dict[str, str] | None = None) -> ExecuteResult:
+        # Strip conda-nesting vars: `conda run` (v26.x) breaks when invoked from a deeply nested
+        # activation (CONDA_SHLVL>1), failing every command. A clean env makes it reliable.
+        base = {k: v for k, v in os.environ.items()
+                if k not in ("CONDA_SHLVL", "CONDA_PREFIX", "CONDA_DEFAULT_ENV",
+                             "CONDA_PROMPT_MODIFIER", "CONDA_STACKED_2")}
         try:
             proc = await asyncio.create_subprocess_exec(
                 "conda", "run", "--no-capture-output", "-n", _LOCAL_ENV, "bash", "-c", command,
-                cwd=self._root, env={**os.environ, **(env or {})},
+                cwd=self._root, env={**base, **(env or {})},
                 stdin=asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
                 start_new_session=True,
