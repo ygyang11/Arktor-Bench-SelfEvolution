@@ -48,12 +48,15 @@ class ArktorAdapter(Adapter):
                     response=ev.get("response") or "", tools=tools,
                 ))
             elif ev.get("type") == "result":
-                u = ev.get("usage") or {}
+                u = ev.get("usage") or {}                 # usage is cumulative over the whole run
                 tokens = TokenUsage(
                     input=u.get("prompt_tokens", 0),
                     cached_input=u.get("cache_read_tokens", 0),
                     output=u.get("completion_tokens", 0),
                     reasoning=u.get("reasoning_tokens", 0),
+                    # window occupancy = the CLI's final input_tokens (last call's input); the
+                    # cumulative prompt_tokens would inflate it, so it is NOT used as a fallback
+                    context=(ev.get("context") or {}).get("input_tokens", 0),
                 )
                 if ev.get("is_error"):
                     cap = True

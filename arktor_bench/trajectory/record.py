@@ -10,6 +10,9 @@ class TokenUsage(BaseModel):
     cached_input: int = 0
     output: int = 0
     reasoning: int = 0
+    # window occupancy = one call's input, never a cumulative total (which inflates over turns).
+    # claude_code = peak per-turn prompt; arktor = CLI final window; codex = peak rollout last-call.
+    context: int = 0
 
 
 class ToolEvent(BaseModel):

@@ -33,6 +33,22 @@ def test_input_tokens_include_cache() -> None:
     assert traj.tokens.output == 150
 
 
+def test_context_is_peak_per_turn_not_sum() -> None:
+    # each assistant message's input+cache is that turn's window occupancy; context = the peak
+    def asst(inp: int, cr: int, cc: int) -> dict:
+        return {"type": "assistant", "message": {
+            "usage": {"input_tokens": inp, "cache_read_input_tokens": cr,
+                      "cache_creation_input_tokens": cc},
+            "content": [{"type": "text", "text": "x"}]}}
+    traj = ClaudeCodeAdapter().to_trajectory([
+        asst(100, 200, 0),     # 300
+        asst(500, 300, 100),   # 900
+        asst(50, 100, 0),      # 150
+        {"type": "result", "subtype": "success", "usage": {}},
+    ])
+    assert traj.tokens.context == 900   # peak, not the last (150) and not the sum (1350)
+
+
 def test_subtype_non_success_sets_cap() -> None:
     traj = ClaudeCodeAdapter().to_trajectory([
         {"type": "result", "subtype": "error_max_turns", "usage": {}},

@@ -37,11 +37,19 @@ class ClaudeCodeAdapter(Adapter):
         error = ""
         think = ""
         response = ""
+        ctx_peak = 0
         pending: dict[str, dict[str, Any]] = {}
 
         for ev in raw:
             t = ev.get("type")
             if t == "assistant":
+                # each assistant message carries THIS call's usage (not cumulative); its full prompt
+                # (input + cache_read + cache_creation) is that turn's window occupancy, so the max
+                # over turns is the peak occupancy
+                mu = ev.get("message", {}).get("usage") or {}
+                ctx_peak = max(ctx_peak, mu.get("input_tokens", 0)
+                               + mu.get("cache_read_input_tokens", 0)
+                               + mu.get("cache_creation_input_tokens", 0))
                 for b in (ev.get("message", {}).get("content") or []):
                     if not isinstance(b, dict):
                         continue
@@ -77,6 +85,7 @@ class ClaudeCodeAdapter(Adapter):
                     cached_input=u.get("cache_read_input_tokens", 0),
                     output=u.get("output_tokens", 0),
                     reasoning=0,
+                    context=ctx_peak,
                 )
                 if ev.get("subtype") != "success":
                     cap = True

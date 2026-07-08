@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import shlex
 import time
 from typing import Any
@@ -16,14 +17,18 @@ class CodexAdapter(Adapter):
 
     async def run(self, task: TaskSpec, ws: Workspace, inv: HarnessInvocation) -> RunResult:
         model = f"-m {shlex.quote(inv.model)} " if inv.model else ""
+        # NOT --ephemeral: that would suppress the session rollout, which is the only place codex
+        # records real context-window occupancy (see _context_from_rollout)
         cmd = (
             f"codex exec --json --dangerously-bypass-approvals-and-sandbox "
-            f"--skip-git-repo-check --ephemeral "
+            f"--skip-git-repo-check "
             f"{model}-- {shlex.quote(task.prompt)} </dev/null"
         )
         t0 = time.monotonic()
         res = await ws.execute(cmd, timeout=get_config().wall_s, env=inv.env)
-        return finish(self, task, ws, res, t0)
+        rr = finish(self, task, ws, res, t0)
+        rr.trajectory.tokens.context = await self._context_from_rollout(ws, inv.env)
+        return rr
 
     def to_trajectory(self, raw: list[dict[str, Any]]) -> TrajectoryRecord:
         steps: list[StepRecord] = []
@@ -46,6 +51,8 @@ class CodexAdapter(Adapter):
         for ev in raw:
             t = ev.get("type")
             if t == "turn.completed":
+                # one terminal turn.completed carrying cumulative run totals (input already includes
+                # cache); occupancy is NOT here — it is read from the rollout in run()
                 u = ev.get("usage") or {}
                 tokens = TokenUsage(
                     input=u.get("input_tokens", 0),
@@ -109,3 +116,29 @@ class CodexAdapter(Adapter):
         return TrajectoryRecord(
             steps=steps, tokens=tokens, cap_hit=cap, error="\n".join(e for e in errors if e),
         )
+
+    @staticmethod
+    async def _context_from_rollout(ws: Workspace, env: dict[str, str]) -> int:
+        """`codex exec --json` never streams occupancy; it lives only in the session rollout as
+        `token_count` events. Peak occupancy = max `last_token_usage.input_tokens` (which already
+        includes cached input for codex, so it is used directly — no cache added)."""
+        cmd = ("find \"${CODEX_HOME:-$HOME/.codex}/sessions\" -name 'rollout-*.jsonl' "
+               "-exec cat {} + 2>/dev/null | grep -a token_count || true")
+        try:
+            out = (await ws.execute(cmd, timeout=30, env=env)).stdout
+        except Exception:  # noqa: BLE001
+            return 0
+        peak = 0
+        for line in out.splitlines():
+            try:
+                ev = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            payload = ev.get("payload") or {}
+            if payload.get("type") != "token_count":
+                continue
+            info = payload.get("info") or {}
+            last = (info.get("last_token_usage") or {}).get("input_tokens", 0)
+            if isinstance(last, int):
+                peak = max(peak, last)
+        return peak

@@ -26,7 +26,18 @@ def test_maps_steps_and_usage() -> None:
     assert traj.steps[1].tools == []
     assert (traj.tokens.input, traj.tokens.cached_input,
             traj.tokens.output, traj.tokens.reasoning) == (1200, 400, 300, 120)
+    # context is the CLI's window field (input_tokens), NOT the cumulative prompt_tokens (1200)
+    assert traj.tokens.context == 950
     assert not traj.cap_hit
+
+
+def test_context_never_falls_back_to_cumulative() -> None:
+    # a run with big cumulative usage but no `context` field must NOT report cumulative as occupancy
+    traj = ArktorAdapter().to_trajectory([
+        {"type": "result", "is_error": False, "usage": {"prompt_tokens": 999999}},
+    ])
+    assert traj.tokens.input == 999999
+    assert traj.tokens.context == 0
 
 
 def test_result_is_error_sets_cap() -> None:
