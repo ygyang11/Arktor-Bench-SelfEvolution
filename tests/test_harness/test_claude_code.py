@@ -55,3 +55,16 @@ def test_subtype_non_success_sets_cap() -> None:
     ])
     assert traj.cap_hit is True
     assert traj.error == "error_max_turns"
+
+
+def test_capped_run_recovers_cumulative_tokens_and_peak_context() -> None:
+    # a killed run never emits `result`; tokens still come from the streamed per-turn usage
+    def turn(i: int, c: int, o: int) -> dict:
+        return {"type": "assistant", "message": {
+            "usage": {"input_tokens": i, "cache_read_input_tokens": c,
+                      "cache_creation_input_tokens": 0, "output_tokens": o},
+            "content": [{"type": "text", "text": "x"}]}}
+    t = ClaudeCodeAdapter().to_trajectory([turn(1000, 50000, 300), turn(1000, 90000, 200)]).tokens
+    assert t.context == 91000                  # peak per-turn prompt (1000 + 90000)
+    assert t.input == 142000                   # cumulative over turns (51000 + 91000)
+    assert t.cached_input == 140000 and t.output == 500

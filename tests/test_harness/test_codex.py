@@ -40,17 +40,22 @@ class _FakeWS:
         return SimpleNamespace(stdout=self._stdout, stderr="", exit_code=0)
 
 
-async def test_context_from_rollout_is_peak_last_call() -> None:
-    def line(inp: int) -> str:
-        return ('{"type":"event_msg","payload":{"type":"token_count","info":'
-                f'{{"last_token_usage":{{"input_tokens":{inp}}},"model_context_window":258400}}}}}}')
-    rollout = "\n".join([line(30000), line(95000), line(80000), '{"type":"other","payload":{}}'])
-    ctx = await CodexAdapter._context_from_rollout(_FakeWS(rollout), {})
-    assert ctx == 95000   # peak last_token_usage.input_tokens, not the last (80000) nor a sum
+async def test_usage_from_rollout_is_peak_and_totals() -> None:
+    def line(inp: int, tot: int) -> str:
+        return ('{"type":"event_msg","payload":{"type":"token_count","info":{'
+                f'"last_token_usage":{{"input_tokens":{inp}}},'
+                f'"total_token_usage":{{"input_tokens":{tot},"output_tokens":7,"total_tokens":{tot}}},'
+                '"model_context_window":258400}}}')
+    rollout = "\n".join([line(30000, 100000), line(95000, 500000), line(80000, 700000),
+                         '{"type":"other","payload":{}}'])
+    peak, totals = await CodexAdapter._usage_from_rollout(_FakeWS(rollout), {})
+    assert peak == 95000                      # peak last_token_usage.input_tokens (window occupancy)
+    assert totals["input_tokens"] == 700000   # largest total_token_usage — recovers a capped run
 
 
-async def test_context_from_rollout_empty_is_zero() -> None:
-    assert await CodexAdapter._context_from_rollout(_FakeWS(""), {}) == 0
+async def test_usage_from_rollout_empty_is_zero() -> None:
+    peak, totals = await CodexAdapter._usage_from_rollout(_FakeWS(""), {})
+    assert peak == 0 and totals == {}
 
 
 def test_turn_failed_sets_cap() -> None:

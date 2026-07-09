@@ -38,6 +38,8 @@ class ClaudeCodeAdapter(Adapter):
         think = ""
         response = ""
         ctx_peak = 0
+        in_sum = cached_sum = out_sum = 0
+        saw_result = False
         pending: dict[str, dict[str, Any]] = {}
 
         for ev in raw:
@@ -47,9 +49,12 @@ class ClaudeCodeAdapter(Adapter):
                 # (input + cache_read + cache_creation) is that turn's window occupancy, so the max
                 # over turns is the peak occupancy
                 mu = ev.get("message", {}).get("usage") or {}
-                ctx_peak = max(ctx_peak, mu.get("input_tokens", 0)
-                               + mu.get("cache_read_input_tokens", 0)
-                               + mu.get("cache_creation_input_tokens", 0))
+                turn_in = (mu.get("input_tokens", 0) + mu.get("cache_read_input_tokens", 0)
+                           + mu.get("cache_creation_input_tokens", 0))
+                ctx_peak = max(ctx_peak, turn_in)     # peak per-turn prompt = window occupancy
+                in_sum += turn_in                     # summed over turns = cumulative input
+                cached_sum += mu.get("cache_read_input_tokens", 0)
+                out_sum += mu.get("output_tokens", 0)
                 for b in (ev.get("message", {}).get("content") or []):
                     if not isinstance(b, dict):
                         continue
@@ -78,6 +83,7 @@ class ClaudeCodeAdapter(Adapter):
                     ))
                     think, response = "", ""
             elif t == "result":
+                saw_result = True
                 u = ev.get("usage") or {}
                 tokens = TokenUsage(
                     input=(u.get("input_tokens", 0) + u.get("cache_read_input_tokens", 0)
@@ -93,4 +99,10 @@ class ClaudeCodeAdapter(Adapter):
         if think or response:
             steps.append(StepRecord(
                 index=len(steps), think=think.strip(), response=response.strip()))
+        # a capped/killed run never emits the final `result`, so tokens would stay zero and the
+        # peak context would be lost; finalize from the per-turn usage we accumulated instead, in
+        # the same terms the `result` branch uses (input = cumulative full prompt, context = peak)
+        if not saw_result and ctx_peak:
+            tokens = TokenUsage(input=in_sum, cached_input=cached_sum,
+                                output=out_sum, context=ctx_peak)
         return TrajectoryRecord(steps=steps, tokens=tokens, cap_hit=cap, error=error)
