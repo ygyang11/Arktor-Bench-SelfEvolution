@@ -27,7 +27,15 @@ class CodexAdapter(Adapter):
         t0 = time.monotonic()
         res = await ws.execute(cmd, timeout=get_config().wall_s, env=inv.env)
         rr = finish(self, task, ws, res, t0)
-        rr.trajectory.tokens.context = await self._context_from_rollout(ws, inv.env)
+        occ, totals = await self._usage_from_rollout(ws, inv.env)
+        rr.trajectory.tokens.context = occ
+        # a capped run never emits `turn.completed`, so its cumulative usage is lost from the
+        # stream; recover it from the rollout's total_token_usage (input already includes cache)
+        if not rr.trajectory.tokens.input and totals:
+            rr.trajectory.tokens.input = totals.get("input_tokens", 0)
+            rr.trajectory.tokens.cached_input = totals.get("cached_input_tokens", 0)
+            rr.trajectory.tokens.output = totals.get("output_tokens", 0)
+            rr.trajectory.tokens.reasoning = totals.get("reasoning_output_tokens", 0)
         return rr
 
     def to_trajectory(self, raw: list[dict[str, Any]]) -> TrajectoryRecord:
@@ -118,17 +126,21 @@ class CodexAdapter(Adapter):
         )
 
     @staticmethod
-    async def _context_from_rollout(ws: Workspace, env: dict[str, str]) -> int:
+    async def _usage_from_rollout(ws: Workspace,
+                                  env: dict[str, str]) -> tuple[int, dict[str, Any]]:
         """`codex exec --json` never streams occupancy; it lives only in the session rollout as
-        `token_count` events. Peak occupancy = max `last_token_usage.input_tokens` (which already
-        includes cached input for codex, so it is used directly — no cache added)."""
+        `token_count` events. Returns (peak occupancy, cumulative totals). Occupancy = max
+        `last_token_usage.input_tokens` (already includes cached input for codex, used directly);
+        totals = the largest `total_token_usage` seen (also cache-inclusive), which recovers a
+        capped run's cumulative tokens when `turn.completed` never streamed."""
         cmd = ("find \"${CODEX_HOME:-$HOME/.codex}/sessions\" -name 'rollout-*.jsonl' "
                "-exec cat {} + 2>/dev/null | grep -a token_count || true")
         try:
             out = (await ws.execute(cmd, timeout=30, env=env)).stdout
         except Exception:  # noqa: BLE001
-            return 0
+            return 0, {}
         peak = 0
+        totals: dict[str, Any] = {}
         for line in out.splitlines():
             try:
                 ev = json.loads(line)
@@ -141,4 +153,8 @@ class CodexAdapter(Adapter):
             last = (info.get("last_token_usage") or {}).get("input_tokens", 0)
             if isinstance(last, int):
                 peak = max(peak, last)
-        return peak
+            tot = info.get("total_token_usage")
+            if isinstance(tot, dict) and \
+                    tot.get("total_tokens", 0) >= totals.get("total_tokens", 0):
+                totals = tot
+        return peak, totals

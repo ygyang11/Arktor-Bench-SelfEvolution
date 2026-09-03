@@ -52,20 +52,46 @@ class LocalBackend:
             )
         except Exception as e:  # noqa: BLE001
             return ExecuteResult(exit_code=None, stdout=f"local exec failed: {e}")
+        # Drain the pipes incrementally rather than via communicate(): on a wall-clock timeout
+        # communicate() discards everything it has buffered, so a capped run loses its whole
+        # streamed trajectory (token/context/step accounting). Draining into our own buffers
+        # keeps the partial stream-json the process emitted before it was killed.
+        out_buf, err_buf = bytearray(), bytearray()
+
+        async def _drain(stream: asyncio.StreamReader | None, buf: bytearray) -> None:
+            if stream is None:
+                return
+            while True:
+                chunk = await stream.read(65536)
+                if not chunk:
+                    break
+                buf.extend(chunk)
+
+        readers = asyncio.gather(_drain(proc.stdout, out_buf), _drain(proc.stderr, err_buf),
+                                 return_exceptions=True)
+        timed_out = False
         try:
-            out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+            await asyncio.wait_for(proc.wait(), timeout=timeout)
         except TimeoutError:
+            timed_out = True
             self._kill(proc)
             await proc.wait()
-            return ExecuteResult(exit_code=None, stdout=f"timeout after {timeout}s")
         except asyncio.CancelledError:
             self._kill(proc)
             await proc.wait()
+            readers.cancel()
             raise
+        # once the process group is gone the pipes hit EOF and the readers finish (return_exceptions
+        # keeps a stream error from propagating); bound the wait so a stuck pipe can't hang us, then
+        # keep whatever we drained. a genuine outer cancellation still propagates.
+        try:
+            await asyncio.wait_for(readers, timeout=5.0)
+        except TimeoutError:
+            readers.cancel()
         return ExecuteResult(
-            exit_code=proc.returncode,
-            stdout=(out or b"").decode(errors="replace"),
-            stderr=(err or b"").decode(errors="replace"),
+            exit_code=None if timed_out else proc.returncode,
+            stdout=bytes(out_buf).decode(errors="replace"),
+            stderr=bytes(err_buf).decode(errors="replace"),
         )
 
     async def stop(self) -> None:

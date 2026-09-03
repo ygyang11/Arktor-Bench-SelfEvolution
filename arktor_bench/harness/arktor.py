@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import shlex
 import time
 import uuid
@@ -19,11 +20,37 @@ class ArktorAdapter(Adapter):
         env = dict(inv.env)
         if inv.model:
             env["ARKTOR_LLM_MODEL"] = inv.model
+        sid = uuid.uuid4().hex
         cmd = (f"arktor -p {shlex.quote(task.prompt)} "
-               f"--output-format json -s {uuid.uuid4().hex}")
+               f"--output-format json -s {sid}")
         t0 = time.monotonic()
         res = await ws.execute(cmd, timeout=get_config().wall_s, env=env)
-        return finish(self, task, ws, res, t0)
+        rr = finish(self, task, ws, res, t0)
+        if not rr.trajectory.tokens.context:      # capped: the `result` event never arrived
+            await self._context_from_session(ws, env, sid, rr.trajectory)
+        return rr
+
+    @staticmethod
+    async def _context_from_session(ws: Workspace, env: dict[str, str], sid: str,
+                                    traj: TrajectoryRecord) -> None:
+        """A capped run never emits the final `result`, losing window occupancy. arktor persists
+        the last call's usage in its session file under `metadata._call_snapshot.input_tokens`,
+        which is the same last-call input the `result` event reports as `context.input_tokens` on a
+        finished run. Recover ONLY that occupancy by the session id we passed with -s; the snapshot
+        is per-last-call, so cumulative input/output are not recoverable from it and stay unset."""
+        dashed = str(uuid.UUID(sid))
+        cmd = ('d="$HOME/.arktor/sessions"; '
+               f'f="$d/{dashed}.json"; [ -f "$f" ] || f="$d/{sid}.json"; '
+               f'[ -f "$f" ] || f=$(grep -laE "{sid}|{dashed}" "$d"/*.json 2>/dev/null | head -1); '
+               'cat "$f" 2>/dev/null || true')
+        try:
+            out = (await ws.execute(cmd, timeout=30, env=env)).stdout
+            snap = (json.loads(out).get("metadata") or {}).get("_call_snapshot") or {}
+        except (ValueError, AttributeError):
+            return
+        occ = snap.get("input_tokens", 0)
+        if isinstance(occ, int) and occ > 0:
+            traj.tokens.context = occ
 
     def to_trajectory(self, raw: list[dict[str, Any]]) -> TrajectoryRecord:
         steps: list[StepRecord] = []

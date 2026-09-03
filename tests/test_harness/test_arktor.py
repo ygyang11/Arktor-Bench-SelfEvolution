@@ -47,3 +47,22 @@ def test_result_is_error_sets_cap() -> None:
     ])
     assert traj.cap_hit is True
     assert traj.error == "boom"
+
+
+async def test_capped_run_recovers_context_from_session() -> None:
+    # a killed run never emits `result`; occupancy is read back from the arktor session file
+    from types import SimpleNamespace
+
+    from arktor_bench.trajectory.record import TokenUsage, TrajectoryRecord
+
+    class _WS:
+        async def execute(self, cmd: str, timeout: float | None = None,
+                          env: dict | None = None) -> object:
+            return SimpleNamespace(stdout=(
+                '{"session_id":"s","metadata":{"_call_snapshot":'
+                '{"input_tokens":48000,"completion_tokens":900,"cache_read":40000}}}'),
+                stderr="", exit_code=0)
+    traj = TrajectoryRecord(steps=[], tokens=TokenUsage())
+    await ArktorAdapter._context_from_session(_WS(), {}, "0123456789abcdef0123456789abcdef", traj)
+    assert traj.tokens.context == 48000        # last call's input = window occupancy, recovered
+    assert traj.tokens.output == 0             # snapshot is last-call only; cumulative stays unset

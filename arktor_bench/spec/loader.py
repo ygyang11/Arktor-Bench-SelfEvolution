@@ -127,7 +127,8 @@ def load(task_dir: Path) -> tuple[TaskSpec, dict[str, CheckFn]]:
 def load_pack(pack: str, tasks: list[str] | None = None,
               base: Path | None = None) -> list[TaskSpec]:
     root = base if base is not None else Path("packs") / pack
-    dirs = {d.name: d for d in root.iterdir() if d.is_dir()}
+    dirs = {d.name: d for d in root.iterdir()
+            if d.is_dir() and (d / "task.md").is_file()}
     names = tasks if tasks else sorted(dirs)
     missing = [n for n in names if n not in dirs]
     if missing:
