@@ -10,7 +10,13 @@ from arktor_bench.config import HarnessInvocation, get_config
 from arktor_bench.harness.base import Adapter, RunResult, args_str, finish
 from arktor_bench.models import TaskSpec
 from arktor_bench.sandbox.workspace import Workspace
-from arktor_bench.trajectory.record import StepRecord, TokenUsage, ToolEvent, TrajectoryRecord
+from arktor_bench.trajectory.record import (
+    AgentMetrics,
+    StepRecord,
+    TokenUsage,
+    ToolEvent,
+    TrajectoryRecord,
+)
 
 
 class ArktorAdapter(Adapter):
@@ -55,6 +61,7 @@ class ArktorAdapter(Adapter):
     def to_trajectory(self, raw: list[dict[str, Any]]) -> TrajectoryRecord:
         steps: list[StepRecord] = []
         tokens = TokenUsage()
+        agents: dict[str, AgentMetrics] = {}
         cap = False
         error = ""
         for ev in raw:
@@ -71,21 +78,38 @@ class ArktorAdapter(Adapter):
                 ]
                 steps.append(StepRecord(
                     index=int(ev.get("index", len(steps))),
+                    agent=str(ev.get("agent") or ""),
+                    phase=str(ev.get("phase") or ""),
                     think=ev.get("thought") or "",
                     response=ev.get("response") or "", tools=tools,
                 ))
             elif ev.get("type") == "result":
-                u = ev.get("usage") or {}                 # usage is cumulative over the whole run
-                tokens = TokenUsage(
-                    input=u.get("prompt_tokens", 0),
-                    cached_input=u.get("cache_read_tokens", 0),
-                    output=u.get("completion_tokens", 0),
-                    reasoning=u.get("reasoning_tokens", 0),
-                    # window occupancy = the CLI's final input_tokens (last call's input); the
-                    # cumulative prompt_tokens would inflate it, so it is NOT used as a fallback
-                    context=(ev.get("context") or {}).get("input_tokens", 0),
-                )
+                tokens = self._tokens_from_result(ev)
+                agents = {
+                    str(name): AgentMetrics(tokens=self._tokens_from_result(metrics))
+                    for name, metrics in (ev.get("agents") or {}).items()
+                    if isinstance(metrics, dict)
+                }
                 if ev.get("is_error"):
                     cap = True
                     error = str(ev.get("error") or "")
-        return TrajectoryRecord(steps=steps, tokens=tokens, cap_hit=cap, error=error)
+        return TrajectoryRecord(
+            steps=steps,
+            tokens=tokens,
+            agents=agents,
+            cap_hit=cap,
+            error=error,
+        )
+
+    @staticmethod
+    def _tokens_from_result(ev: dict[str, Any]) -> TokenUsage:
+        usage = ev.get("usage") or {}
+        context = ev.get("context") or {}
+        return TokenUsage(
+            input=usage.get("prompt_tokens", 0),
+            cached_input=usage.get("cache_read_tokens", 0),
+            output=usage.get("completion_tokens", 0),
+            reasoning=usage.get("reasoning_tokens", 0),
+            # Window occupancy is the final input, never cumulative prompt usage.
+            context=context.get("input_tokens", 0),
+        )

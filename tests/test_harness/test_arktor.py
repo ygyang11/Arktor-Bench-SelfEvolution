@@ -28,6 +28,9 @@ def test_maps_steps_and_usage() -> None:
             traj.tokens.output, traj.tokens.reasoning) == (1200, 400, 300, 120)
     # context is the CLI's window field (input_tokens), NOT the cumulative prompt_tokens (1200)
     assert traj.tokens.context == 950
+    assert s0.agent == ""
+    assert s0.phase == ""
+    assert traj.agents == {}
     assert not traj.cap_hit
 
 

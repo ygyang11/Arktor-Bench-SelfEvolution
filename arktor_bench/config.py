@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 BENCH_HOME = Path.home() / ".arktor-bench"
+
+ARKTOR_SDK_FAMILY = "arktor_sdk"
+_ARKTOR_SDK_PREFIX = f"{ARKTOR_SDK_FAMILY}."
+_METHOD_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
 class ModelEndpoint(BaseModel):
@@ -28,6 +33,7 @@ class HarnessInvocation(BaseModel):
     backend: Literal["docker", "local"] = "docker"
     model: str = ""
     image: str | None = None
+    command: list[str] = Field(default_factory=list)
     mounts: dict[str, str] = Field(default_factory=dict)   # container_path -> host_path, read-only
     files: dict[str, str] = Field(default_factory=dict)
     env: dict[str, str] = Field(default_factory=dict)
@@ -38,7 +44,42 @@ class HarnessConfigs(BaseModel):
     arktor: HarnessInvocation | None = None
     codex: HarnessInvocation | None = None
     claude_code: HarnessInvocation | None = None
+    arktor_sdk: dict[str, HarnessInvocation] = Field(default_factory=dict)
     model_config = {"extra": "forbid"}
+
+    @field_validator("arktor_sdk")
+    @classmethod
+    def validate_arktor_sdk(
+        cls,
+        methods: dict[str, HarnessInvocation],
+    ) -> dict[str, HarnessInvocation]:
+        for method, inv in methods.items():
+            if _METHOD_NAME.fullmatch(method) is None:
+                raise ValueError(f"invalid arktor_sdk method name '{method}'")
+            if not inv.command or any(not arg.strip() for arg in inv.command):
+                raise ValueError(
+                    f"arktor_sdk method '{method}' requires a non-empty command argv"
+                )
+        return methods
+
+    @staticmethod
+    def arktor_sdk_method(name: str) -> str | None:
+        if name != ARKTOR_SDK_FAMILY and not name.startswith(_ARKTOR_SDK_PREFIX):
+            return None
+        method = name.removeprefix(_ARKTOR_SDK_PREFIX)
+        if name == ARKTOR_SDK_FAMILY or _METHOD_NAME.fullmatch(method) is None:
+            raise ValueError(
+                f"invalid harness name '{name}'; expected arktor_sdk.<method> "
+                "with a [a-z0-9_] name"
+            )
+        return method
+
+    def invocation(self, name: str) -> HarnessInvocation:
+        method = self.arktor_sdk_method(name)
+        inv = self.arktor_sdk.get(method) if method is not None else getattr(self, name, None)
+        if inv is None:
+            raise SystemExit(f"harness '{name}' not configured in arktor-bench.yaml")
+        return inv
 
 
 class BenchConfig(BaseModel):
@@ -55,10 +96,7 @@ class BenchConfig(BaseModel):
     model_config = {"extra": "forbid"}
 
     def harness_invocation(self, name: str) -> HarnessInvocation:
-        inv: HarnessInvocation | None = getattr(self.harness, name, None)
-        if inv is None:
-            raise SystemExit(f"harness '{name}' not configured in arktor-bench.yaml")
-        return inv
+        return self.harness.invocation(name)
 
     @property
     def judge_endpoint(self) -> ModelEndpoint:

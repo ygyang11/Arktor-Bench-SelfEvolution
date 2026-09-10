@@ -50,8 +50,10 @@ def args_str(args: Any) -> str:
 
 
 def finish(adapter: Adapter, task: TaskSpec, ws: Workspace,
-           res: ExecuteResult, t0: float) -> RunResult:
-    traj = adapter.to_trajectory(parse_ndjson(res.stdout))
+           res: ExecuteResult, t0: float, *,
+           events: list[dict[str, Any]] | None = None) -> RunResult:
+    raw = parse_ndjson(res.stdout) if events is None else events
+    traj = adapter.to_trajectory(raw)
     traj.wall_ms = int((time.monotonic() - t0) * 1000)
     if res.exit_code != 0:
         traj.cap_hit = True

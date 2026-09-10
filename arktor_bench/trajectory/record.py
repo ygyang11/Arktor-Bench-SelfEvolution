@@ -27,11 +27,18 @@ class StepRecord(BaseModel):
     think: str = ""
     response: str = ""
     tools: list[ToolEvent] = Field(default_factory=list)
+    agent: str = ""
+    phase: str = ""
+
+
+class AgentMetrics(BaseModel):
+    tokens: TokenUsage = Field(default_factory=TokenUsage)
 
 
 class TrajectoryRecord(BaseModel):
     steps: list[StepRecord]
     tokens: TokenUsage
+    agents: dict[str, AgentMetrics] = Field(default_factory=dict)
     wall_ms: int = 0
     cap_hit: bool = False
     error: str = ""
