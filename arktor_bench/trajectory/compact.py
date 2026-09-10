@@ -22,7 +22,13 @@ def compact_trajectory(traj: TrajectoryRecord) -> str:
     blocks: list[str] = []
     seen: dict[tuple[str, str, str], int] = {}
     for s in traj.steps:
-        lines = [f"### Step {s.index}"]
+        labels = []
+        if s.agent:
+            labels.append(f"agent={s.agent}")
+        if s.phase:
+            labels.append(f"phase={s.phase}")
+        suffix = f" [{', '.join(labels)}]" if labels else ""
+        lines = [f"### Step {s.index}{suffix}"]
         if s.think:
             lines.append(f"Think: {_field(s.think, _THINK)}")
         if s.response:

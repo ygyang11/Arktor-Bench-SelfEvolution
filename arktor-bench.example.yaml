@@ -36,6 +36,14 @@ harness:
     #   backend: "docker"
     #   files: { "/root/.claude/settings.json": "~/.claude/settings.json" }
     #   env: { ANTHROPIC_BASE_URL: "...", CLAUDE_CODE_OAUTH_TOKEN: "..." }   # or ANTHROPIC_API_KEY
+  arktor_sdk:
+    example:
+      command: ["python", "-m", "your_package.method"]
+      model: "gpt-5.5"
+      mounts:
+        "/opt/sdk-method": "/absolute/path/to/your/project"
+      env:
+        PYTHONPATH: "/opt/sdk-method"
 
 # --- Judge / Diagnose (bench's own LLM) ---
 # diagnose is a field-level overlay on judge; `{}` (or omitted) = identical.

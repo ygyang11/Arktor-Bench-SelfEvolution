@@ -7,7 +7,7 @@ from pathlib import Path
 import typer
 
 from arktor_bench.config import BENCH_HOME, get_config
-from arktor_bench.harness import ADAPTERS
+from arktor_bench.harness import create_adapter
 from arktor_bench.llm import StructuredLLM
 
 app = typer.Typer(no_args_is_help=True)
@@ -40,11 +40,22 @@ def _run(pack: str, harness: str, tasks: str, trials: int, out: Path) -> Path:
         ts = load_pack(pack, sel, base=_pack_dir(pack))
     except ValueError as e:
         raise typer.BadParameter(str(e)) from e
-    names = harness.split(",")
-    unknown = [h for h in names if h not in ADAPTERS]
-    if unknown:
-        raise typer.BadParameter(f"unknown harness {unknown}; choose from {sorted(ADAPTERS)}")
-    adapters = [ADAPTERS[h]() for h in names]
+    names = [name.strip() for name in harness.split(",")]
+    if any(not name for name in names):
+        raise typer.BadParameter("harness list contains an empty name")
+    duplicates = sorted({name for name in names if names.count(name) > 1})
+    if duplicates:
+        raise typer.BadParameter(f"duplicate harness names: {duplicates}")
+    try:
+        adapters = [create_adapter(name) for name in names]
+    except ValueError as e:
+        raise typer.BadParameter(str(e)) from e
+    cfg = get_config()  # config ValidationError is not a CLI argument error
+    try:
+        for name in names:
+            cfg.harness_invocation(name)
+    except ValueError as e:
+        raise typer.BadParameter(str(e)) from e
     out.mkdir(parents=True, exist_ok=True)
     write_manifest(out, pack, [t.id for t in ts] if sel else [], trials, names)
     typer.echo(f"run: pack={pack} harness={names} tasks={len(ts)} trials={trials} -> {out}")
