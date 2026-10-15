@@ -38,9 +38,17 @@ arktor-bench.yaml
 .research
 .review
 .arktor-bench
-calibration/
 docs/
+calibration/
+internal/
+packs/**/internal/
+packs/**/_prevalidation/
+packs/**/calibration/
 
 # ===== Output & Traces =====
+run_exp/
 
+packs/**/*.db
+packs/**/*.db-wal
+packs/**/*.db-shm
 /packs/internal/
