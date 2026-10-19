@@ -1,32 +1,120 @@
-# Arktor-Bench-SelfEvolution
+<h1 align="center">WirelessRoboBench</h1>
 
-Arktor-Bench-SelfEvolution evaluates the **harness (scaffold)**. The same model is dropped into different harnesses (Arktor / Codex CLI / Claude Code) and run over the same batch of from-scratch tasks, to locate where harness falls short and produce an actionable list of improvements.
+<h2 align="center">Evaluating Agents for Wireless Robotics</h2>
 
-The core difficulty in evaluating a harness is **attribution**: when a task fails, was it the scaffold that failed to carry the model, or a limitation of the model itself? Fusing *evaluation* and *attribution* — e.g. handing the harness a single synthetic score blended with execution quality — sacrifices cross-harness comparability and once again blurs which share of the failure belongs to the model. Arktor-Bench-SelfEvolution rests on **decoupling the two**: scoring (rubric + judge) answers only *how well the task was completed* — neutral across harnesses, one ruler for all; *who to charge for this failure* is left to an independent `diagnose` that follows the trajectory and attributes the cause to a specific lever, or rules it an inherent model limitation. Precisely because scoring never touches attribution, shortcomings sort cleanly — harness ones into each harness's backlog, model ones handed to the trainer. From the backlog the harness is then **iteratively optimized**: change the harness by impact, re-run, and keep the change when the scoreboard rises without regressing — round after round, closing a single evaluation into continuous evolution. **The bench is the fitness function; the harness is the scaffold under evolution.** A single evaluation thus extends naturally into a loop: **measure completion → attribute root cause → iteratively optimize**.
+<p align="center">
+  <a href="https://github.com/ygyang11/WirelessRoboAgent"><img src="https://img.shields.io/badge/Paper-Repository-blue?logo=github" alt="Paper repository"></a>
+  <a href="pyproject.toml"><img src="https://img.shields.io/badge/Python-3.11%2B-blue" alt="Python 3.11+"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green" alt="License: MIT"></a>
+</p>
 
-## Pipeline
+WirelessRoboBench is an agent benchmark with execution-grounded multidimensional
+evaluation across **60 open-ended tasks spanning six families**, presented in
+*Agentic AI and Benchmarking for Intelligent Wireless Robotics*.
+We develop **Arktor-Bench-SelfEvolution** to connect agent benchmarking with
+evidence-driven refinement, bringing task execution, evaluation, and diagnosis
+into a unified framework.
 
-`run → diagnose → report` (or the one-shot `eval` chain):
+## Benchmark
 
-- **run** — execute the matrix of (harness × task × trial) in an isolated sandbox; a neutral judge scores task completion against each task's rubric.
-- **diagnose** — for every failed criterion, independently attribute the root cause to a harness lever *or* a model capability.
-- **report** — aggregate findings into a per-harness backlog, ranked by impact.
+[![WirelessRoboBench: domain-grounded construction yields diverse wireless robotics tasks for execution-grounded multidimensional agent evaluation.](assets/benchmark.png)](assets/benchmark.png)
 
-## Quick start
+Tasks preserve communication–robotics interactions, coupled decisions, and
+performance trade-offs. They specify requirements while leaving solutions
+open-ended, requiring executable implementations and verifiable result evidence.
+
+Browse the [task pack](packs/wireless_robot/) for self-contained task
+specifications and executable graders.
+
+## Evaluation
+
+Evaluation combines automatic checks and independent replay with rubric-based
+LLM assessment.
+
+| Component | Assessment |
+| --- | --- |
+| **Execution and Feasibility Assessment (A)** | Check Execution Validity, Output Conformity, Scenario Completeness, Evidence Sufficiency, and Constraint Satisfaction; verify Dynamical Consistency through independent replay. |
+| **Validity-Gated Performance Evaluation (M)** | Evaluate primary objectives and auxiliary trade-offs from independent replay. This component is zero when required validity checks fail. |
+| **Rubric-Based Quality Assessment (J)** | Assess Problem Formulation, Method Design, Experimental Evaluation, and Result Analysis against task-specific rubrics, jointly reviewing implementations, reports, and result evidence. |
+
+## Getting started
+
+### Installation
+
+Clone the repository and create the supplied Conda environment:
 
 ```bash
-# install (Python 3.11)
-pip install -e ".[dev]"
-
-# statically validate the bundled smoke task — no LLM or Docker needed
-arktor-bench validate test
-
-# point the bench at its judge/diagnose LLM and the harnesses under test
-mkdir -p ~/.arktor-bench
-cp arktor-bench.example.yaml ~/.arktor-bench/arktor-bench.yaml   # then fill in your values
-
-# run the full pipeline on the smoke task
-arktor-bench eval test arktor,codex,claude_code --trials 3
+git clone --branch research/wireless-robo-agent \
+  https://github.com/ygyang11/Arktor-Bench-SelfEvolution.git
+cd Arktor-Bench-SelfEvolution
+conda env create -f environment.yml
+conda activate arktor-bench
+python -m pip install -e ".[dev]"
 ```
 
-`packs/test/` holds a single end-to-end smoke task (`T001_todo_cli`) for validating an install; the real task packs live beside it under `packs/`.
+Validate the task specifications locally, without a model API or Docker:
+
+```bash
+arktor-bench validate wireless_robot
+```
+
+### Configuration
+
+From the repository root, create a user configuration:
+
+```bash
+mkdir -p ~/.arktor-bench
+cp arktor-bench.example.yaml ~/.arktor-bench/arktor-bench.yaml
+```
+
+Set the judge's OpenAI-compatible model endpoint under `judge`:
+
+```yaml
+judge:
+  model: "__SET_JUDGE_MODEL__"
+  base_url: "__SET_BASE_URL__"
+  api_key: "__SET_API_KEY__"
+```
+
+Configure evaluated agents under `harness`, including their models and
+authentication. See [arktor-bench.example.yaml](arktor-bench.example.yaml) for
+all settings. A working-directory `arktor-bench.yaml` takes priority over the
+user configuration.
+
+### Execution environment
+
+With Docker running, build the image for WirelessRoboAgent:
+
+```bash
+docker build -f docker/Dockerfile.base \
+  --build-arg ARKTOR_REF=research/wireless-robo-agent \
+  -t arktor-bench:base .
+```
+
+To load the bundled research guidance, add `/opt/arktor/skills` to `skill.dirs`
+in the agent configuration supplied to the container.
+
+## Run an evaluation
+
+From the repository root, run a single task with a configured agent:
+
+```bash
+arktor-bench run wireless_robot arktor \
+  --tasks T001_uav_waypoint_delivery --trials 1
+```
+
+To evaluate all 60 tasks:
+
+```bash
+arktor-bench run wireless_robot arktor --trials 1
+```
+
+Use `arktor-bench run --help` for task selection and execution options.
+
+## Citation
+
+For the paper citation, see the [paper repository](https://github.com/ygyang11/WirelessRoboAgent#citation).
+
+## License
+
+Released under the [MIT License](LICENSE).
