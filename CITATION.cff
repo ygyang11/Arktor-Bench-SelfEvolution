@@ -1,0 +1,9 @@
+cff-version: 1.2.0
+message: "If you use Arktor-Bench-SelfEvolution, please cite this repository."
+type: software
+title: Arktor-Bench-SelfEvolution
+authors:
+  - name: ygyang11
+repository-code: "https://github.com/ygyang11/Arktor-Bench-SelfEvolution"
+url: "https://github.com/ygyang11/Arktor-Bench-SelfEvolution"
+license: MIT
